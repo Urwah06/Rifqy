@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Extraction Ops FPS</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;overflow:hidden;background:#111;color:white;font-family:Arial,sans-serif}
+#hud{position:fixed;inset:0;pointer-events:none}
+#top{position:absolute;top:15px;left:15px;background:#0009;padding:12px;border:1px solid #777}
+#help{position:absolute;bottom:15px;left:15px;background:#0009;padding:10px;font-size:13px;line-height:1.6}
+#crosshair{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:28px;color:#fff}
+#message{position:absolute;top:25%;width:100%;text-align:center;font-size:28px;font-weight:bold;text-shadow:0 2px 5px #000}
+#startScreen{position:fixed;inset:0;background:#101820eF;display:flex;align-items:center;justify-content:center;z-index:5;text-align:center}
+#panel{padding:30px;background:#1b252d;border:1px solid #72818a;max-width:500px}
+button{padding:12px 25px;background:#d5a33a;border:0;font-size:17px;font-weight:bold;cursor:pointer}
+h1{color:#e0b34b}
+</style>
+</head>
+<body>
+<div id="startScreen">
+  <div id="panel">
+    <h1>EXTRACTION OPS</h1>
+    <p>Masuk ke zona operasi, kalahkan musuh, ambil loot, lalu menuju extraction.</p>
+    <p>WASD: bergerak | Mouse: bidik | Klik kiri: tembak</p>
+    <p>R: reload | E: ambil loot</p>
+    <button id="startButton">MULAI MISI</button>
+    <p id="loadStatus">Memuat game...</p>
+  </div>
+</div>
+
+<div id="hud">
+  <div id="top">
+    <div>LEVEL: <span id="level">1</span></div>
+    <div>HP: <span id="hp">100</span></div>
+    <div>AMMO: <span id="ammo">30 / 30</span></div>
+    <div>LOOT: <span id="loot">0</span></div>
+  </div>
+  <div id="crosshair">+</div>
+  <div id="message"></div>
+  <div id="help">
+    WASD: Bergerak<br>
+    Mouse: Bidik<br>
+    Klik kiri: Tembak<br>
+    R: Isi ulang peluru<br>
+    E: Ambil loot<br>
+    Cari zona hijau untuk extraction!
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+(() => {
+"use strict";
+
+const status = document.getElementById("loadStatus");
+const startButton = document.getElementById("startButton");
+
+if (!window.THREE) {
+  status.textContent = "Three.js gagal dimuat. Periksa koneksi internet lalu refresh.";
+  startButton.disabled = true;
+  return;
+}
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87959a);
+scene.fog = new THREE.Fog(0x87959a, 35, 130);
+
+const camera = new THREE.PerspectiveCamera(
+  75, window.innerWidth/window.innerHeight, 0.1, 500
+);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth,window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xc9e4ff,0x47412d,2));
+
+const sun = new THREE.DirectionalLight(0xffffff,2.2);
+sun.position.set(30,50,20);
+sun.castShadow = true;
+scene.add(sun);
+
+const material = (color) => new THREE.MeshStandardMaterial({
+  color, roughness:0.85
+});
+
+const groundMat = material(0x626b4f);
+const wallMat = material(0x77766d);
+const crateMat = material(0x8a6238);
+const enemyMat = material(0x4d2724);
+const enemyHeadMat = material(0x9b6b52);
+const lootMat = material(0xd9b84e);
+
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(300,300),groundMat
+);
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+function box(x,y,z,sx,sy,sz,mat) {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat);
+  mesh.position.set(x,y,z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+  return mesh;
+}
+
+// Bangunan dan rintangan
+for(let i=0;i<18;i++){
+  const x=(Math.random()-0.5)*100;
+  const z=(Math.random()-0.5)*100;
+  if(Math.abs(x)<12 && Math.abs(z)<12) continue;
+
+  box(x,2,z,5+Math.random()*5,4,5+Math.random()*5,wallMat);
+}
+
+for(let i=0;i<28;i++){
+  const x=(Math.random()-0.5)*90;
+  const z=(Math.random()-0.5)*90;
+  if(Math.abs(x)<10 && Math.abs(z)<10) continue;
+  box(x,0.8,z,2,1.6,2,crateMat);
+}
+
+// Zona extraction
+const extraction = new THREE.Mesh(
+  new THREE.CylinderGeometry(7,7,0.15,48),
+  new THREE.MeshBasicMaterial({
+    color:0x00ff66,
+    transparent:true,
+    opacity:0.35
+  })
+);
+extraction.position.set(0,0.1,-35);
+scene.add(extraction);
+
+const ring = new THREE.Mesh(
+  new THREE.RingGeometry(6.5,7.2,48),
+  new THREE.MeshBasicMaterial({
+    color:0x00ff66,
+    side:THREE.DoubleSide
+  })
+);
+ring.rotation.x=-Math.PI/2;
+ring.position.set(0,0.2,-35);
+scene.add(ring);
+
+// Senjata sederhana di tampilan pemain
+const gun = new THREE.Group();
+const gunBody = new THREE.Mesh(
+  new THREE.BoxGeometry(0.22,0.22,0.8),material(0x25292b)
+);
+gunBody.position.set(0.35,-0.28,-0.65);
+gun.add(gunBody);
+
+const gunBarrel = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.045,0.045,0.5,8),
+  material(0x111111)
+);
+gunBarrel.rotation.x=Math.PI/2;
+gunBarrel.position.set(0.35,-0.25,-1.05);
+gun.add(gunBarrel);
+
+camera.add(gun);
+scene.add(camera);
+
+// Pemain
+camera.position.set(0,1.7,8);
+
+let yaw=0;
+let pitch=0;
+let hp=100;
+let ammo=30;
+let reserve=120;
+let lootCount=0;
+let level=1;
+let gameStarted=false;
+let gameOver=false;
+let reloading=false;
+let lastShot=0;
+
+const keys={};
+const enemies=[];
+const lootItems=[];
+const raycaster=new THREE.Raycaster();
+const center=new THREE.Vector2(0,0);
+
+function makeEnemy(x,z){
+  const group=new THREE.Group();
+
+  const body=new THREE.Mesh(
+    new THREE.BoxGeometry(0.8,1.2,0.45),enemyMat
+  );
+  body.position.y=1.1;
+  body.castShadow=true;
+  group.add(body);
+
+  const head=new THREE.Mesh(
+    new THREE.SphereGeometry(0.32,12,12),enemyHeadMat
+  );
+  head.position.y=1.95;
+  head.castShadow=true;
+  group.add(head);
+
+  const legs=[];
+  for(let side of [-1,1]){
+    const leg=new THREE.Mesh(
+      new THREE.BoxGeometry(0.25,0.8,0.3),enemyMat
+    );
+    leg.position.set(side*0.22,0.4,0);
+    group.add(leg);
+    legs.push(leg);
+  }
+
+  group.position.set(x,0,z);
+  group.userData={
+    hp:100,
+    body,
+    head,
+    legs,
+    lastAttack:0,
+    alive:true
+  };
+
+  scene.add(group);
+  enemies.push(group);
+}
+
+function spawnEnemies(){
+  const amount=4+level*2;
+  for(let i=0;i<amount;i++){
+    let x,z;
+    do{
+      x=(Math.random()-0.5)*70;
+      z=(Math.random()-0.5)*70;
+    }while(Math.hypot(x-camera.position.x,z-camera.position.z)<15);
+
+    makeEnemy(x,z);
+  }
+}
+
+function spawnLoot(x,z){
+  const item=new THREE.Mesh(
+    new THREE.BoxGeometry(0.7,0.5,0.7),lootMat
+  );
+  item.position.set(x,0.35,z);
+  item.castShadow=true;
+  item.userData.pickup=true;
+  scene.add(item);
+  lootItems.push(item);
+}
+
+function updateHUD(){
+  document.getElementById("hp").textContent=Math.max(0,Math.floor(hp));
+  document.getElementById("ammo").textContent=ammo+" / "+reserve;
+  document.getElementById("loot").textContent=lootCount;
+  document.getElementById("level").textContent=level;
+}
+
+function showMessage(text){
+  const el=document.getElementById("message");
+  el.textContent=text;
+  setTimeout(()=>{
+    if(el.textContent===text) el.textContent="";
+  },2200);
+}
+
+function shoot(){
+  if(!gameStarted || gameOver || reloading) return;
+  if(Date.now()-lastShot<180) return;
+  lastShot=Date.now();
+
+  if(ammo<=0){
+    showMessage("PELURU HABIS! Tekan R");
+    return;
+  }
+
+  ammo--;
+  updateHUD();
+
+  // Efek recoil
+  camera.rotation.x=Math.max(-1.4,Math.min(1.4,pitch+0.015));
+  gun.position.z=0.12;
+  setTimeout(()=>gun.position.z=0,70);
+
+  raycaster.setFromCamera(center,camera);
+
+  const targets=[];
+  enemies.forEach(enemy=>{
+    if(enemy.userData.alive){
+      enemy.traverse(obj=>{
+        if(obj.isMesh) {
+          obj.userData.enemy=enemy;
+          targets.push(obj);
+        }
+      });
+    }
+  });
+
+  const hits=raycaster.intersectObjects(targets,false);
+
+  if(hits.length){
+    const enemy=hits[0].object.userData.enemy;
+    if(enemy && enemy.userData.alive){
+      const isHead=hits[0].object===enemy.userData.head;
+      enemy.userData.hp-=isHead?100:35;
+
+      // Efek hit
+      hits[0].object.material.emissive=new THREE.Color(0x550000);
+      setTimeout(()=>{
+        if(hits[0] && hits[0].object.material)
+          hits[0].object.material.emissive=new THREE.Color(0x000000);
+      },100);
+
+      if(enemy.userData.hp<=0){
+        enemy.userData.alive=false;
+        scene.remove(enemy);
+        spawnLoot(enemy.position.x,enemy.position.z);
+        showMessage("MUSUH DIKALAHKAN!");
+      }
+    }
+  }
+}
+
+function reload(){
+  if(reloading || ammo===30 || reserve<=0 || gameOver) return;
+  reloading=true;
+  showMessage("RELOADING...");
+
+  setTimeout(()=>{
+    const needed=30-ammo;
+    const amount=Math.min(needed,reserve);
+    ammo+=amount;
+    reserve-=amount;
+    reloading=false;
+    updateHUD();
+  },1400);
+}
+
+function pickupLoot(){
+  for(let i=lootItems.length-1;i>=0;i--){
+    const item=lootItems[i];
+    if(item.position.distanceTo(camera.position)<3){
+      scene.remove(item);
+      lootItems.splice(i,1);
+      lootCount+=1;
+      reserve+=15;
+      updateHUD();
+      showMessage("LOOT DIDAPATKAN! +15 PELURU");
+      return;
+    }
+  }
+  showMessage("TIDAK ADA LOOT DI DEKATMU");
+}
+
+function lockMouse(){
+  renderer.domElement.requestPointerLock();
+}
+
+document.addEventListener("pointerlockchange",()=>{
+  if(document.pointerLockElement===renderer.domElement){
+    gameStarted=true;
+    document.getElementById("startScreen").style.display="none";
+  }
+});
+
+document.addEventListener("mousemove",e=>{
+  if(document.pointerLockElement!==renderer.domElement) return;
+
+  yaw-=e.movementX*0.002;
+  pitch-=e.movementY*0.002;
+  pitch=Math.max(-1.45,Math.min(1.45,pitch));
+
+  camera.rotation.order="YXZ";
+  camera.rotation.y=yaw;
+  camera.rotation.x=pitch;
+});
+
+document.addEventListener("mousedown",e=>{
+  if(e.button===0) shoot();
+});
+
+document.addEventListener("keydown",e=>{
+  keys[e.code]=true;
+
+  if(e.code==="KeyR") reload();
+  if(e.code==="KeyE") pickupLoot();
+});
+
+document.addEventListener("keyup",e=>{
+  keys[e.code]=false;
+});
+
+startButton.addEventListener("click",()=>{
+  if(!window.THREE){
+    status.textContent="Three.js belum tersedia. Periksa koneksi internet.";
+    return;
+  }
+
+  if(enemies.length===0) spawnEnemies();
+  lockMouse();
+});
+
+function updatePlayer(delta){
+  if(!gameStarted || gameOver) return;
+
+  const speed=10*delta;
+  const direction=new THREE.Vector3();
+
+  if(keys.KeyW) direction.z-=1;
+  if(keys.KeyS) direction.z+=1;
+  if(keys.KeyA) direction.x-=1;
+  if(keys.KeyD) direction.x+=1;
+
+  direction.normalize();
+  direction.applyAxisAngle(new THREE.Vector3(0,1,0),yaw);
+
+  camera.position.x+=direction.x*speed;
+  camera.position.z+=direction.z*speed;
+
+  camera.position.x=Math.max(-95,Math.min(95,camera.position.x));
+  camera.position.z=Math.max(-95,Math.min(95,camera.position.z));
+}
+
+function updateEnemies(delta){
+  if(!gameStarted || gameOver) return;
+
+  enemies.forEach(enemy=>{
+    if(!enemy.userData.alive) return;
+
+    const dx=camera.position.x-enemy.position.x;
+    const dz=camera.position.z-enemy.position.z;
+    const distance=Math.hypot(dx,dz);
+
+    if(distance>2.2){
+      const speed=(1.5+level*0.15)*delta;
+      enemy.position.x+=(dx/distance)*speed;
+      enemy.position.z+=(dz/distance)*speed;
+      enemy.rotation.y=Math.atan2(dx,dz);
+    }else if(Date.now()-enemy.userData.lastAttack>900){
+      enemy.userData.lastAttack=Date.now();
+      hp-=8;
+      updateHUD();
+
+      if(hp<=0){
+        hp=0;
+        gameOver=true;
+        showMessage("MISI GAGAL! Refresh untuk mencoba lagi.");
+        updateHUD();
+      }
+    }
+  });
+}
+
+function checkExtraction(){
+  if(!gameStarted || gameOver) return;
+
+  const distance=Math.hypot(
+    camera.position.x-extraction.position.x,
+    camera.position.z-extraction.position.z
+  );
+
+  if(distance<6){
+    level++;
+    hp=Math.min(100,hp+20);
+    ammo=30;
+    reserve+=30;
+    updateHUD();
+
+    enemies.forEach(enemy=>scene.remove(enemy));
+    enemies.length=0;
+
+    lootItems.forEach(item=>scene.remove(item));
+    lootItems.length=0;
+
+    camera.position.set(0,1.7,8);
+    yaw=0;
+    pitch=0;
+    camera.rotation.set(0,0,0);
+
+    spawnEnemies();
+    showMessage("EXTRACTION BERHASIL! LEVEL "+level);
+  }
+}
+
+let previousTime=performance.now();
+
+function animate(now){
+  requestAnimationFrame(animate);
+
+  const delta=Math.min((now-previousTime)/1000,0.05);
+  previousTime=now;
+
+  updatePlayer(delta);
+  updateEnemies(delta);
+  checkExtraction();
+
+  lootItems.forEach(item=>{
+    item.rotation.y+=delta;
+    item.position.y=0.35+Math.sin(now*0.002)*0.1;
+  });
+
+  renderer.render(scene,camera);
+}
+
+window.addEventListener("resize",()=>{
+  camera.aspect=window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth,window.innerHeight);
+});
+
+updateHUD();
+spawnEnemies();
+animate(performance.now());
+status.textContent="Game siap dimainkan!";
+})();
+</script>
+</body>
+</html>
